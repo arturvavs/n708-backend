@@ -5,6 +5,8 @@ services:
       - "5001:5001"
     env_file:
       - ./n708-authentication/.env
+    volumes:
+      - authentication-data:/app/data
     restart: unless-stopped
 
   ticket:
@@ -14,7 +16,7 @@ services:
     env_file:
       - ./n708-ticket/.env
     volumes:
-      - ./n708-ticket/uploads:/app/uploads
+      - ticket-data:/app/data
     restart: unless-stopped
 
   feedback:
@@ -23,6 +25,8 @@ services:
       - "5003:5003"
     env_file:
       - ./n708-feedback/.env
+    volumes:
+      - feedback-data:/app/data
     restart: unless-stopped
 
   orchestrator:
@@ -36,3 +40,8 @@ services:
       - ticket
       - feedback
     restart: unless-stopped
+
+volumes:
+  authentication-data:
+  ticket-data:
+  feedback-data:
