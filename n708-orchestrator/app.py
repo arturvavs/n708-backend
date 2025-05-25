@@ -12,12 +12,14 @@ CORS(app)
 # Em um ambiente de produção, essas URLs viriam de variáveis de ambiente
 AUTH_SERVICE_URL = os.environ.get('AUTH_SERVICE_URL', 'http://localhost:5001')
 TICKETS_SERVICE_URL = os.environ.get('TICKETS_SERVICE_URL', 'http://localhost:5002')
+FEEDBACK_SERVICE_URL = os.environ.get('FEEDBACK_SERVICE_URL', 'http://localhost:5003')
 
 # Função para verificar se os serviços estão ativos
 def check_services():
     services_status = {
         'auth_service': 'offline',
-        'tickets_service': 'offline'
+        'tickets_service': 'offline',
+        'feedback_service': 'offline'
     }
     
     try:
@@ -34,6 +36,13 @@ def check_services():
     except:
         pass
     
+    try:
+        feedback_response = requests.get(f"{FEEDBACK_SERVICE_URL}/health", timeout=2)
+        if feedback_response.status_code == 200:
+            services_status['feedback_service'] = 'online'
+    except:
+        pass
+
     return services_status
 
 # Rota para verificar a saúde da aplicação orquestradora
@@ -219,6 +228,106 @@ def update_ticket_status(ticket_id):
 def uploaded_file(filename):
     # Apenas redireciona para o serviço de tickets
     return redirect(f"{TICKETS_SERVICE_URL}/uploads/{filename}")
+
+@app.route('/api/feedback', methods=['POST'])
+def create_feedback():
+    token = get_token_from_header()
+    if not token:
+        return jsonify({'error': 'Token não fornecido'}), 401
+    
+    data = request.get_json()
+    try:
+        response = requests.post(
+            f"{FEEDBACK_SERVICE_URL}/feedback",
+            json=data,
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+        )
+        return jsonify(response.json()), response.status_code
+    except requests.RequestException as e:
+        return jsonify({'error': f'Serviço de feedback indisponível: {str(e)}'}), 503
+
+@app.route('/api/feedback/<int:feedback_id>', methods=['GET'])
+def get_feedback(feedback_id):
+    token = get_token_from_header()
+    if not token:
+        return jsonify({'error': 'Token não fornecido'}), 401
+    
+    try:
+        response = requests.get(
+            f"{FEEDBACK_SERVICE_URL}/feedback/{feedback_id}",
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+        )
+        return jsonify(response.json()), response.status_code
+    except requests.RequestException as e:
+        return jsonify({'error': f'Serviço de feedback indisponível: {str(e)}'}), 503
+
+@app.route('/api/feedback', methods=['GET'])
+def list_feedback():
+    token = get_token_from_header()
+    if not token:
+        return jsonify({'error': 'Token não fornecido'}), 401
+    
+    params = request.args.to_dict()
+    try:
+        response = requests.get(
+            f"{FEEDBACK_SERVICE_URL}/feedback",
+            params=params,
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+        )
+        return jsonify(response.json()), response.status_code
+    except requests.RequestException as e:
+        return jsonify({'error': f'Serviço de feedback indisponível: {str(e)}'}), 503
+
+@app.route('/api/feedback/<int:feedback_id>', methods=['PATCH'])
+def update_feedback(feedback_id):
+    token = get_token_from_header()
+    if not token:
+        return jsonify({'error': 'Token não fornecido'}), 401
+
+    data = request.get_json()
+    if not data or 'content' not in data:
+        return jsonify({'error': 'Campo "content" é obrigatório'}), 400
+
+    try:
+        response = requests.patch(
+            f"{FEEDBACK_SERVICE_URL}/feedback/{feedback_id}",
+            json=data,
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+        )
+        return jsonify(response.json()), response.status_code
+    except requests.RequestException as e:
+        return jsonify({'error': f'Serviço de feedback indisponível: {str(e)}'}), 503
+
+@app.route('/api/feedback/<int:feedback_id>', methods=['DELETE'])
+def delete_feedback(feedback_id):
+    token = get_token_from_header()
+    if not token:
+        return jsonify({'error': 'Token não fornecido'}), 401
+
+    try:
+        response = requests.delete(
+            f"{FEEDBACK_SERVICE_URL}/feedback/{feedback_id}",
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+        )
+        return jsonify(response.json()), response.status_code
+    except requests.RequestException as e:
+        return jsonify({'error': f'Serviço de feedback indisponível: {str(e)}'}), 503
+
 
 # Tratamento de erros
 @app.errorhandler(404)

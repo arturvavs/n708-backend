@@ -12,3 +12,4 @@ class Config:
     # Configuração dos serviços
     AUTH_SERVICE_URL = os.environ.get('AUTH_SERVICE_URL', 'http://localhost:5001')
     TICKETS_SERVICE_URL = os.environ.get('TICKETS_SERVICE_URL', 'http://localhost:5002')
+    FEEDBACK_SERVICE_URL = os.environ.get('FEEDBACK_SERVICE_URL', 'http://localhost:5003')
