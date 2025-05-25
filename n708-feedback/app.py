@@ -3,11 +3,16 @@ from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
+from datetime import timedelta
 
 load_dotenv()
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///feedback.db')
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'default-dev-key-auth-service')
+jwt = JWTManager(app)
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['DEBUG'] = os.getenv('FLASK_ENV') == 'development'
 
@@ -28,10 +33,15 @@ def setup():
         app.has_run = True
 
 @app.route('/feedback', methods=['POST'])
+@jwt_required()
 def create_comment():
     data = request.get_json()
     if not data or not all(k in data for k in ('ticket_id', 'user_id', 'content')):
         return jsonify({'error': 'Campos obrigatórios: ticket_id, user_id, content'}), 400
+
+    current_user = get_jwt_identity()
+    user_id = current_user.get('id')
+
     comment = Comment(ticket_id=data['ticket_id'], user_id=data['user_id'], content=data['content'])
     db.session.add(comment)
     db.session.commit()
