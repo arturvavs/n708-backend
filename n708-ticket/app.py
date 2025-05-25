@@ -88,7 +88,7 @@ def auth_required():
 def health_check():
     return jsonify({
         'status': 'online',
-        'service': 'tickets_service'
+        'service': 'tickets'
     })
 
 # Rota para servir imagens de uploads
@@ -507,6 +507,11 @@ def internal_server_error(error):
     return jsonify({'error': 'Erro interno do servidor'}), 500
 
 if __name__ == '__main__':
-    # Obter porta do ambiente ou usar 5002 por padrão
-    port = int(os.environ.get('PORT', 5002))
-    app.run(host='0.0.0.0', port=port)
+    try:
+        port = int(os.getenv('PORT', '5002'))
+    except ValueError:
+        print("⚠️  Porta inválida. Usando 5002 como padrão.")
+        port = 5002
+
+    debug_mode = os.getenv('FLASK_ENV') == 'development'
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)

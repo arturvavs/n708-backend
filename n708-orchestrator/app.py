@@ -1,5 +1,5 @@
 # app.py (Aplicação Orquestradora)
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
 import requests
 import os
@@ -17,29 +17,29 @@ FEEDBACK_SERVICE_URL = os.environ.get('FEEDBACK_SERVICE_URL', 'http://localhost:
 # Função para verificar se os serviços estão ativos
 def check_services():
     services_status = {
-        'auth_service': 'offline',
-        'tickets_service': 'offline',
-        'feedback_service': 'offline'
+        'authentication': 'offline',
+        'tickets': 'offline',
+        'feedback': 'offline'
     }
     
     try:
         auth_response = requests.get(f"{AUTH_SERVICE_URL}/health", timeout=2)
         if auth_response.status_code == 200:
-            services_status['auth_service'] = 'online'
+            services_status['authentication'] = 'online'
     except:
         pass
     
     try:
         tickets_response = requests.get(f"{TICKETS_SERVICE_URL}/health", timeout=2)
         if tickets_response.status_code == 200:
-            services_status['tickets_service'] = 'online'
+            services_status['tickets'] = 'online'
     except:
         pass
     
     try:
         feedback_response = requests.get(f"{FEEDBACK_SERVICE_URL}/health", timeout=2)
         if feedback_response.status_code == 200:
-            services_status['feedback_service'] = 'online'
+            services_status['feedback'] = 'online'
     except:
         pass
 
@@ -339,6 +339,11 @@ def internal_server_error(error):
     return jsonify({'error': 'Erro interno do servidor'}), 500
 
 if __name__ == '__main__':
-    # Obter porta do ambiente ou usar 5000 por padrão
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    try:
+        port = int(os.getenv('PORT', '5000'))
+    except ValueError:
+        print("⚠️  Porta inválida. Usando 5000 como padrão.")
+        port = 5000
+
+    debug_mode = os.getenv('FLASK_ENV') == 'development'
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)

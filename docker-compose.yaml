@@ -1,0 +1,38 @@
+services:
+  authentication:
+    build: ./n708-authentication
+    ports:
+      - "5001:5001"
+    env_file:
+      - ./n708-authentication/.env
+    restart: unless-stopped
+
+  ticket:
+    build: ./n708-ticket
+    ports:
+      - "5002:5002"
+    env_file:
+      - ./n708-ticket/.env
+    volumes:
+      - ./n708-ticket/uploads:/app/uploads
+    restart: unless-stopped
+
+  feedback:
+    build: ./n708-feedback
+    ports:
+      - "5003:5003"
+    env_file:
+      - ./n708-feedback/.env
+    restart: unless-stopped
+
+  orchestrator:
+    build: ./n708-orchestrator
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./n708-orchestrator/.env
+    depends_on:
+      - authentication
+      - ticket
+      - feedback
+    restart: unless-stopped
