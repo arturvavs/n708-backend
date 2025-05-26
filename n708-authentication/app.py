@@ -2,11 +2,11 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
 import re
 import json
+import hashlib
 from datetime import timedelta
 
 app = Flask(__name__)
@@ -16,6 +16,17 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'default-dev-key-auth-service')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 jwt = JWTManager(app)
+
+# Caminho do banco de dados
+DB_PATH = os.environ.get('DB_PATH', 'users.db')
+
+def simple_hash_password(password):
+    """Hash simples usando SHA-256 para compatibilidade"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verify_password(password, hashed):
+    """Verifica senha usando hash simples"""
+    return simple_hash_password(password) == hashed
 
 # Caminho do banco de dados
 DB_PATH = os.environ.get('DB_PATH', 'users.db')
@@ -53,17 +64,25 @@ def init_db():
         # Criar usuário admin padrão
         cursor.execute(
             'INSERT INTO users (name, email, password, document_type, document, role) VALUES (?, ?, ?, ?, ?, ?)',
-            ('Admin', 'admin@example.com', generate_password_hash('admin123'), 'cpf', '00000000000', 'admin')
+            ('Admin', 'admin@example.com', simple_hash_password('admin123'), 'cpf', '00000000000', 'admin')
         )
     
-    # Verificar se já existe um usuário organization
-    org = cursor.execute('SELECT * FROM users WHERE role = ?', ('organization',)).fetchone()
-    if not org:
-        # Criar usuário organization padrão
-        cursor.execute(
-            'INSERT INTO users (name, email, password, document_type, document, role) VALUES (?, ?, ?, ?, ?, ?)',
-            ('Prefeitura', 'prefeitura@example.com', generate_password_hash('org123'), 'cnpj', '00000000000000', 'organization')
-        )
+    # Verificar se já existe usuários de exemplo
+    user_count = cursor.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+    if user_count < 3:
+        # Criar usuários de exemplo
+        examples = [
+            ('João Silva', 'joao@example.com', 'cpf', '12345678901', 'user'),
+            ('Empresa ABC Ltda', 'empresa@example.com', 'cnpj', '12345678000195', 'organization'),
+        ]
+        
+        for name, email, doc_type, document, role in examples:
+            existing = cursor.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+            if not existing:
+                cursor.execute(
+                    'INSERT INTO users (name, email, password, document_type, document, role) VALUES (?, ?, ?, ?, ?, ?)',
+                    (name, email, simple_hash_password('123456'), doc_type, document, role)
+                )
     
     conn.commit()
     conn.close()
@@ -110,6 +129,14 @@ def register():
     address = data.get('address', {})
     address_json = json.dumps(address) if address else '{}'
     
+    # Definir role baseado no tipo de documento
+    if document_type == 'cpf':
+        role = 'user'
+    elif document_type == 'cnpj':
+        role = 'organization'
+    else:
+        role = data.get('role', 'user')
+    
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -127,7 +154,7 @@ def register():
             return jsonify({"error": f"{'CPF' if document_type == 'cpf' else 'CNPJ'} já cadastrado"}), 409
         
         # Criar o novo usuário
-        hashed_password = generate_password_hash(data['password'])
+        hashed_password = simple_hash_password(data['password'])
         
         cursor.execute(
             '''
@@ -142,7 +169,7 @@ def register():
                 document_type,
                 document,
                 address_json,
-                data.get('role', 'user')  # Por padrão, o papel é 'user'
+                role
             )
         )
         conn.commit()
@@ -173,12 +200,11 @@ def login():
         # Buscar o usuário pelo e-mail
         user = cursor.execute('SELECT * FROM users WHERE email = ?', (data['email'],)).fetchone()
         
-        if not user or not check_password_hash(user['password'], data['password']):
+        if not user or not verify_password(data['password'], user['password']):
             conn.close()
             return jsonify({"error": "Credenciais inválidas"}), 401
         
-        # Criar o token JWT - CORREÇÃO AQUI
-        # O 'identity' deve ser uma string, não um dicionário
+        # Criar o token JWT
         access_token = create_access_token(identity=str(user['id']))
         
         conn.close()
@@ -203,26 +229,73 @@ def login():
 @app.route('/profile', methods=['GET'])
 @jwt_required()
 def profile():
-    current_user = get_jwt_identity()
-    
-    return jsonify({
-        "user": current_user
-    }), 200
-
-# Rota para listar todos os usuários (apenas para admin)
-@app.route('/users', methods=['GET'])
-@jwt_required()
-def get_users():
-    current_user = get_jwt_identity()
-    
-    # Verificar se o usuário tem permissão de admin
-    if current_user.get('role') != 'admin':
-        return jsonify({"error": "Não autorizado"}), 403
+    current_user_id = get_jwt_identity()
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
+        user = cursor.execute(
+            'SELECT id, name, email, document, document_type, role FROM users WHERE id = ?', 
+            (current_user_id,)
+        ).fetchone()
+        
+        if not user:
+            conn.close()
+            return jsonify({"error": "Usuário não encontrado"}), 404
+        
+        conn.close()
+        return jsonify({
+            "user": dict(user)
+        }), 200
+    
+    except sqlite3.Error as e:
+        conn.close()
+        return jsonify({"error": str(e)}), 500
+
+# Rota para obter informações de um usuário específico (usado pelos outros serviços)
+@app.route('/user/<int:user_id>', methods=['GET'])
+@jwt_required()
+def get_user(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        user = cursor.execute(
+            'SELECT id, name, email, document, document_type, role FROM users WHERE id = ?', 
+            (user_id,)
+        ).fetchone()
+        
+        if not user:
+            conn.close()
+            return jsonify({"error": "Usuário não encontrado"}), 404
+        
+        conn.close()
+        return jsonify({
+            "user": dict(user)
+        }), 200
+    
+    except sqlite3.Error as e:
+        conn.close()
+        return jsonify({"error": str(e)}), 500
+
+# Rota para listar todos os usuários (apenas para admin)
+@app.route('/users', methods=['GET'])
+@jwt_required()
+def get_users():
+    current_user_id = get_jwt_identity()
+    
+    # Verificar se o usuário tem permissão de admin
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        current_user = cursor.execute('SELECT role FROM users WHERE id = ?', (current_user_id,)).fetchone()
+        
+        if not current_user or current_user['role'] != 'admin':
+            conn.close()
+            return jsonify({"error": "Não autorizado"}), 403
+        
         users = cursor.execute('SELECT id, name, email, document_type, document, role FROM users').fetchall()
         
         # Converter os objetos Row para dicionários
