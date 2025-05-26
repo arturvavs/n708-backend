@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Configurações
 DB_PATH = os.environ.get('DB_PATH', 'tickets.db')
@@ -68,7 +68,12 @@ def verify_token(token):
             timeout=5
         )
         if response.status_code == 200:
-            return response.json()['user'], None
+            user_id = response.json()['user']
+            # Retornar dados básicos do usuário baseado no ID
+            return {
+                'id': int(user_id),
+                'role': 'user'  # Por simplicidade, assumir role 'user'
+            }, None
         else:
             return None, response.json().get('error', 'Token inválido')
     except requests.RequestException as e:

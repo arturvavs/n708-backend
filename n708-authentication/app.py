@@ -10,7 +10,7 @@ import json
 from datetime import timedelta
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Configuração do JWT
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'default-dev-key-auth-service')
@@ -177,21 +177,9 @@ def login():
             conn.close()
             return jsonify({"error": "Credenciais inválidas"}), 401
         
-        # Converter o objeto Row para dicionário
-        user_data = dict(user)
-        
-        # Remover a senha do objeto de resposta
-        user_data.pop('password', None)
-        
-        # Criar o token JWT
-        access_token = create_access_token(identity={
-            "id": user['id'],
-            "email": user['email'],
-            "name": user['name'],
-            "document": user['document'],
-            "document_type": user['document_type'],
-            "role": user['role']
-        })
+        # Criar o token JWT - CORREÇÃO AQUI
+        # O 'identity' deve ser uma string, não um dicionário
+        access_token = create_access_token(identity=str(user['id']))
         
         conn.close()
         return jsonify({
@@ -256,14 +244,15 @@ def verify_token():
         return jsonify({"error": "Token não fornecido"}), 400
     
     try:
-        # Usar a função do JWT Extended para decodificar o token
         from flask_jwt_extended.utils import decode_token
-        user_data = decode_token(data['token'])
+        decoded = decode_token(data['token'])
         
-        # Se chegou aqui, o token é válido
+        # O 'sub' agora contém apenas o user_id como string
+        user_id = decoded['sub']
+        
         return jsonify({
             "valid": True,
-            "user": user_data['sub']  # 'sub' contém o identity que passamos na criação do token
+            "user": user_id
         }), 200
     except Exception as e:
         return jsonify({

@@ -6,7 +6,7 @@ import os
 import json
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Configurações de conexão com os microserviços
 # Em um ambiente de produção, essas URLs viriam de variáveis de ambiente
