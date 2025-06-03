@@ -1,5 +1,5 @@
 # app.py (Aplicação Orquestradora)
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
 import requests
 import os
@@ -9,7 +9,6 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Configurações de conexão com os microserviços
-# Em um ambiente de produção, essas URLs viriam de variáveis de ambiente
 AUTH_SERVICE_URL = os.environ.get('AUTH_SERVICE_URL', 'http://localhost:5001')
 TICKETS_SERVICE_URL = os.environ.get('TICKETS_SERVICE_URL', 'http://localhost:5002')
 
@@ -58,7 +57,6 @@ def get_token_from_header():
 def register():
     data = request.get_json()
     
-    # Encaminha a requisição para o serviço de autenticação
     try:
         response = requests.post(
             f"{AUTH_SERVICE_URL}/register",
@@ -73,7 +71,6 @@ def register():
 def login():
     data = request.get_json()
     
-    # Encaminha a requisição para o serviço de autenticação
     try:
         response = requests.post(
             f"{AUTH_SERVICE_URL}/login",
@@ -90,7 +87,6 @@ def profile():
     if not token:
         return jsonify({'error': 'Token não fornecido'}), 401
     
-    # Encaminha a requisição para o serviço de autenticação
     try:
         response = requests.get(
             f"{AUTH_SERVICE_URL}/profile",
@@ -110,10 +106,8 @@ def get_tickets():
     if not token:
         return jsonify({'error': 'Token não fornecido'}), 401
     
-    # Extrai parâmetros de query da URL
     params = request.args.to_dict()
     
-    # Encaminha a requisição para o serviço de tickets
     try:
         response = requests.get(
             f"{TICKETS_SERVICE_URL}/tickets",
@@ -133,9 +127,7 @@ def create_ticket():
     if not token:
         return jsonify({'error': 'Token não fornecido'}), 401
     
-    # Verificar se é multipart form data (contém imagem) ou json
     if request.content_type and 'multipart/form-data' in request.content_type:
-        # Tratar upload de imagem e outros dados
         data = request.form.to_dict()
         files = {}
         
@@ -143,7 +135,6 @@ def create_ticket():
             image = request.files['image']
             files = {'image': (image.filename, image.read(), image.content_type)}
             
-        # Encaminha a requisição para o serviço de tickets
         try:
             response = requests.post(
                 f"{TICKETS_SERVICE_URL}/tickets",
@@ -157,7 +148,6 @@ def create_ticket():
         except requests.RequestException as e:
             return jsonify({'error': f'Serviço de tickets indisponível: {str(e)}'}), 503
     else:
-        # Requisição JSON padrão
         data = request.get_json()
         
         try:
@@ -179,7 +169,6 @@ def get_ticket(ticket_id):
     if not token:
         return jsonify({'error': 'Token não fornecido'}), 401
     
-    # Encaminha a requisição para o serviço de tickets
     try:
         response = requests.get(
             f"{TICKETS_SERVICE_URL}/tickets/{ticket_id}",
@@ -192,18 +181,56 @@ def get_ticket(ticket_id):
     except requests.RequestException as e:
         return jsonify({'error': f'Serviço de tickets indisponível: {str(e)}'}), 503
 
-@app.route('/api/tickets/<int:ticket_id>/status', methods=['PATCH'])
-def update_ticket_status(ticket_id):
+# Nova rota para assumir ticket
+@app.route('/api/tickets/<int:ticket_id>/assign', methods=['PATCH'])
+def assign_ticket(ticket_id):
+    token = get_token_from_header()
+    if not token:
+        return jsonify({'error': 'Token não fornecido'}), 401
+    
+    try:
+        response = requests.patch(
+            f"{TICKETS_SERVICE_URL}/tickets/{ticket_id}/assign",
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+        )
+        return jsonify(response.json()), response.status_code
+    except requests.RequestException as e:
+        return jsonify({'error': f'Serviço de tickets indisponível: {str(e)}'}), 503
+
+# Nova rota para finalizar ticket
+@app.route('/api/tickets/<int:ticket_id>/complete', methods=['PATCH'])
+def complete_ticket(ticket_id):
+    token = get_token_from_header()
+    if not token:
+        return jsonify({'error': 'Token não fornecido'}), 401
+    
+    try:
+        response = requests.patch(
+            f"{TICKETS_SERVICE_URL}/tickets/{ticket_id}/complete",
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+        )
+        return jsonify(response.json()), response.status_code
+    except requests.RequestException as e:
+        return jsonify({'error': f'Serviço de tickets indisponível: {str(e)}'}), 503
+
+# Nova rota para adicionar feedback
+@app.route('/api/tickets/<int:ticket_id>/feedback', methods=['PATCH'])
+def add_feedback(ticket_id):
     token = get_token_from_header()
     if not token:
         return jsonify({'error': 'Token não fornecido'}), 401
     
     data = request.get_json()
     
-    # Encaminha a requisição para o serviço de tickets
     try:
         response = requests.patch(
-            f"{TICKETS_SERVICE_URL}/tickets/{ticket_id}/status",
+            f"{TICKETS_SERVICE_URL}/tickets/{ticket_id}/feedback",
             json=data,
             headers={
                 'Authorization': f'Bearer {token}',
@@ -217,7 +244,6 @@ def update_ticket_status(ticket_id):
 # Rota para servir imagens de uploads
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
-    # Apenas redireciona para o serviço de tickets
     return redirect(f"{TICKETS_SERVICE_URL}/uploads/{filename}")
 
 # Tratamento de erros
@@ -230,6 +256,5 @@ def internal_server_error(error):
     return jsonify({'error': 'Erro interno do servidor'}), 500
 
 if __name__ == '__main__':
-    # Obter porta do ambiente ou usar 5000 por padrão
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
